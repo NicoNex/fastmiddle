@@ -1,11 +1,16 @@
 CC = clang
 CFLAGS = -Wall -O2
-LDFLAGS = -framework Cocoa -framework IOKit -framework ApplicationServices -framework CoreFoundation -framework MultitouchSupport -F/System/Library/PrivateFrameworks
+LDFLAGS = -framework IOKit -framework ApplicationServices -framework MultitouchSupport -F/System/Library/PrivateFrameworks
 
 all: fastmiddle
 
-fastmiddle: main.c
-	$(CC) $(CFLAGS) main.c -o fastmiddle $(LDFLAGS)
+.PHONY: all fastmiddle app backend
+
+fastmiddle:
+	swiftc -parse-as-library -import-objc-header backend.h fastmiddle.swift backend.c -o fastmiddle $(LDFLAGS)
+
+backend:
+	clang $(CFLAGS) backend.c -o fastmiddle $(LDFLAGS)
 
 app: fastmiddle
 	mkdir -p FastMiddle.app/Contents/MacOS

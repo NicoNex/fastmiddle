@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+	"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
@@ -12,12 +12,12 @@
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleExecutable</key>
-    <string>FastMiddle</string>
+    <string>fastmiddle</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.14</string>
-    <key>LSBackgroundOnly</key>
-    <true />
+    <string>11.00</string>
+    <key>LSUIElement</key>
+    <string>1</string>
 </dict>
 </plist>

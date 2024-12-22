@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "multitouch.h"
+#include "backend.h"
 
 // Global variable to track the current number of fingers touching the trackpad
 static int current_fingers = 0;
@@ -39,12 +40,7 @@ static CGEventRef mouse_callback(CGEventTapProxy proxy, CGEventType type, CGEven
 	return event;
 }
 
-struct mt_devices {
-	CFMutableArrayRef array;
-	CFIndex len;
-};
-
-struct mt_devices multitouch_devices() {
+static struct mt_devices multitouch_devices() {
 	// Attempt to create a list of multitouch devices
 	CFMutableArrayRef devices = MTDeviceCreateList();
 	if (devices == NULL) {
@@ -96,42 +92,58 @@ static void device_notification_callback(void *refcon, io_iterator_t iter) {
 	devices_refresh((struct mt_devices *) refcon);
 }
 
-static inline kern_return_t listen_io_notification(struct mt_devices *devices, IONotificationPortRef port) {
+static inline void stop_io_notifications(struct fm_state *state) {
+	if (state->port != NULL) {
+		IONotificationPortDestroy(state->port);
+		state->port = NULL;
+	}
+}
+
+static inline kern_return_t listen_io_notification(struct fm_state *state) {
+	state->port = IONotificationPortCreate(kIOMainPortDefault);
+
 	// Set up device notifications
 	CFRunLoopAddSource(
 		CFRunLoopGetMain(),
-		IONotificationPortGetRunLoopSource(port),
+		IONotificationPortGetRunLoopSource(state->port),
 		kCFRunLoopDefaultMode
 	);
 
 	io_iterator_t iterator;
 	kern_return_t kres = IOServiceAddMatchingNotification(
-		port,
+		state->port,
 		kIOFirstMatchNotification,
 		IOServiceMatching("AppleMultitouchDevice"),
 		device_notification_callback,
-		devices,
+		&state->devices,
 		&iterator
 	);
 
-	if (kres != KERN_SUCCESS) {
-		IONotificationPortDestroy(port);
-		return kres;
-	}
-
-	io_object_t item;
-	while ((item = IOIteratorNext(iterator))) {
-		IOObjectRelease(item);
+	if (kres == KERN_SUCCESS) {
+		io_object_t item;
+		while ((item = IOIteratorNext(iterator))) {
+			IOObjectRelease(item);
+		}
 	}
 	return kres;
 }
 
-static int listen_click_loop(struct mt_devices *devices) {
-	CFMachPortRef tap_event = NULL;
+void stop_click_loop(struct fm_state *state) {
+	if (state->tap_event != NULL) {
+		CGEventTapEnable(state->tap_event, false);
+		CFRelease(state->tap_event);
+		state->tap_event = NULL;
+	}
+	if (state->run_loop_src != NULL) {
+		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), state->run_loop_src, kCFRunLoopCommonModes);
+		CFRelease(state->run_loop_src);
+	}
+}
 
-	for (int i = 0; tap_event == NULL && i < 300; i++) {
+static int listen_click_loop(struct fm_state *state) {
+	for (int i = 0; state->tap_event == NULL && i < 300; i++) {
 		// Create a global event tap to listen for left mouse down and up events
-		tap_event = CGEventTapCreate(
+		state->tap_event = CGEventTapCreate(
 			kCGHIDEventTap,
 			kCGHeadInsertEventTap,
 			kCGEventTapOptionDefault,
@@ -139,55 +151,65 @@ static int listen_click_loop(struct mt_devices *devices) {
 			mouse_callback,
 			NULL
 		);
-		if (tap_event == NULL) {
+		if (state->tap_event == NULL) {
 			sleep(1);
 		}
 	}
 
-	if (tap_event == NULL) {
+	if (state->tap_event == NULL) {
 		fputs("Failed to create event tap. Check accessibility permissions.", stderr);
-		devices_cleanup(*devices);
 		return 1;
 	}
 
 	// Add the event tap to the current run loop
-	CFRunLoopSourceRef run_loop_src = CFMachPortCreateRunLoopSource(NULL, tap_event, 0);
-	if (run_loop_src == NULL) {
+	state->run_loop_src = CFMachPortCreateRunLoopSource(NULL, state->tap_event, 0);
+	if (state->run_loop_src == NULL) {
 		fputs("Failed to create run loop source.", stderr);
-		devices_cleanup(*devices);
 		return 1;
 	}
 
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), run_loop_src, kCFRunLoopCommonModes);
-	CGEventTapEnable(tap_event, true);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), state->run_loop_src, kCFRunLoopCommonModes);
+	CGEventTapEnable(state->tap_event, true);
 	// Run the main loop to start receiving events
 	CFRunLoopRun();
 
 	// If for some reason the main loop returns we cleanup the registered events.
-	CGEventTapEnable(tap_event, false);
-	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), run_loop_src, kCFRunLoopCommonModes);
-	CFRelease(run_loop_src);
-	CFRelease(tap_event);
+	stop_click_loop(state);
 	return 0;
 }
 
-int main() {
-	struct mt_devices devices = multitouch_devices();
-	devices_register(devices, touch_callback);
+struct fm_state new_state() {
+	return (struct fm_state) {.devices = multitouch_devices()};
+}
 
-	IONotificationPortRef port = IONotificationPortCreate(kIOMainPortDefault);
-	if (listen_io_notification(&devices, port) != KERN_SUCCESS) {
+void run_click_loop(struct fm_state *state) {
+	devices_register(state->devices, touch_callback);
+
+	if (listen_io_notification(state) != KERN_SUCCESS) {
 		fputs("Failed to add device notification.", stderr);
-		devices_cleanup(devices);
-		return 1;
+		stop_io_notifications(state);
+		devices_cleanup(state->devices);
+		return;
 	}
 
 	for (;;) {
-		if (listen_click_loop(&devices) != 0) {
-			devices_cleanup(devices);
-			IONotificationPortDestroy(port);
-			return 1;
+		if (listen_click_loop(state) != 0) {
+			devices_cleanup(state->devices);
+			stop_io_notifications(state);
+			return;
 		}
 	}
-	return 0;
 }
+
+void state_cleanup(struct fm_state *state) {
+	stop_io_notifications(state);
+	stop_click_loop(state);
+	devices_cleanup(state->devices);
+}
+
+// int main() {
+// 	struct fm_state state = new_state();
+
+// 	run_click_loop(&state);
+// 	state_cleanup(&state);
+// }

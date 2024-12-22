@@ -207,9 +207,11 @@ void state_cleanup(struct fm_state *state) {
 	devices_cleanup(state->devices);
 }
 
-// int main() {
-// 	struct fm_state state = new_state();
+#ifdef STANDALONE
+int main() {
+	struct fm_state state = new_state();
 
-// 	run_click_loop(&state);
-// 	state_cleanup(&state);
-// }
+	run_click_loop(&state);
+	state_cleanup(&state);
+}
+#endif

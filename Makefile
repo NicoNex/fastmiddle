@@ -10,7 +10,7 @@ fastmiddle:
 	swiftc -parse-as-library -import-objc-header backend.h fastmiddle.swift backend.c -o fastmiddle $(LDFLAGS)
 
 backend:
-	clang $(CFLAGS) backend.c -o fastmiddle $(LDFLAGS)
+	clang $(CFLAGS) -DSTANDALONE backend.c -o fastmiddle $(LDFLAGS)
 
 app: fastmiddle
 	mkdir -p FastMiddle.app/Contents/MacOS

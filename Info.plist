@@ -5,20 +5,30 @@
 <dict>
     <key>CFBundleName</key>
     <string>FastMiddle</string>
+
     <key>CFBundleDisplayName</key>
     <string>FastMiddle</string>
+
     <key>CFBundleIdentifier</key>
     <string>com.niconex.fastmiddle</string>
+
     <key>CFBundleVersion</key>
     <string>1.0</string>
+
     <key>CFBundleExecutable</key>
     <string>fastmiddle</string>
+
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+
     <key>LSMinimumSystemVersion</key>
     <string>11.00</string>
+
     <key>LSUIElement</key>
     <string>1</string>
+
+    <key>CFBundleIconFile</key>
+    <string>FastMiddle</string>
 
     <key>SMPrivilegedExecutables</key>
     <dict>

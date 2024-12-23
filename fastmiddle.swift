@@ -97,7 +97,7 @@ struct HoverLineHighlightButtonStyle: ButtonStyle {
 				configuration.label
 				Spacer()
 			}
-			.padding(.horizontal, 6)
+			.padding(.horizontal, 3)
 			.padding(.vertical, 2)
 			.background(
 				isHovered

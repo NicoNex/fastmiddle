@@ -16,7 +16,7 @@ app: fastmiddle
 	mkdir -p FastMiddle.app/Contents/MacOS FastMiddle.app/Contents/Resources
 	cp Info.plist FastMiddle.app/Contents
 	cp fastmiddle FastMiddle.app/Contents/MacOS
-	cp assets/* FastMiddle.app/Contents/Resources
+	iconutil -c icns --output FastMiddle.app/Contents/Resources/FastMiddle.icns FastMiddle.iconset
 
 clean:
 	rm -f fastmiddle

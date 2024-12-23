@@ -19,5 +19,11 @@
     <string>11.00</string>
     <key>LSUIElement</key>
     <string>1</string>
+
+    <key>SMPrivilegedExecutables</key>
+    <dict>
+        <key>com.niconex.fastmiddle</key>
+        <string>identifier.of.your.app</string>
+    </dict>
 </dict>
 </plist>

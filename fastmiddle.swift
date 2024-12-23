@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 // MARK: - FastMiddle
@@ -117,13 +118,19 @@ struct HoverLineHighlightButtonStyle: ButtonStyle {
 struct FastMiddleApp: App {
 	// Now we only have a single class, so let's name it fastMiddle
 	@StateObject private var fastMiddle = FastMiddle()
+	@State private var launchAtLoginEnabled: Bool = false
+
+	init() {
+		// Check if the app is already set to launch at login
+		launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+	}
 
 	var body: some Scene {
-		MenuBarExtra("FastMiddle", systemImage: "gear") {
+		MenuBarExtra("FastMiddle", systemImage: "computermouse.fill") {
 			VStack(alignment: .leading) {
 				// Single-line label + toggle
 				HStack {
-					Text("Enabled")
+					Text("FastMiddle")
 						.font(.body)
 						.bold()
 
@@ -133,6 +140,15 @@ struct FastMiddleApp: App {
 						.toggleStyle(.switch)
 						.tint(.accentColor)  // Use system accent color (macOS 11+)
 				}
+
+				Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
+					.onChange(of: launchAtLoginEnabled) { _, newValue in
+						if newValue {
+							enableLaunchAtLogin()
+						} else {
+							disableLaunchAtLogin()
+						}
+					}
 
 				Divider()
 
@@ -163,5 +179,23 @@ struct FastMiddleApp: App {
 		}
 		// For macOS 14+, ensures the toggle is interactive
 		.menuBarExtraStyle(.window)
+	}
+
+	private func enableLaunchAtLogin() {
+		do {
+			try SMAppService.mainApp.register()
+			print("App registered to launch at login.")
+		} catch {
+			print("Failed to register app for login: \(error.localizedDescription)")
+		}
+	}
+
+	private func disableLaunchAtLogin() {
+		do {
+			try SMAppService.mainApp.unregister()
+			print("App unregistered from launching at login.")
+		} catch {
+			print("Failed to unregister app from login: \(error.localizedDescription)")
+		}
 	}
 }

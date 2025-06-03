@@ -213,5 +213,6 @@ int main() {
 
 	run_click_loop(&state);
 	state_cleanup(&state);
+	return 0;
 }
 #endif

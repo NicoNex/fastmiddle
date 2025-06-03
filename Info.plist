@@ -30,10 +30,14 @@
     <key>CFBundleIconFile</key>
     <string>FastMiddle</string>
 
+    <key>NSAppleEventsUsageDescription</key>
+    <string
+		>FastMiddle requires access to control your computer for gesture recognition.</string>
+
     <key>SMPrivilegedExecutables</key>
     <dict>
         <key>com.niconex.fastmiddle</key>
-        <string>identifier.of.your.app</string>
+        <string>com.niconex.fastmiddle</string>
     </dict>
 </dict>
 </plist>

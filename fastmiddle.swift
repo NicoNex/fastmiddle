@@ -1,6 +1,22 @@
 import ServiceManagement
 import SwiftUI
 
+func askPermissions() {
+	let options =
+		[kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+	if !AXIsProcessTrustedWithOptions(options) {
+		// This will pop up the system dialog pointing the user to
+		// System Settings → Privacy & Security → Input Monitoring.
+		// After they click “OK” and grant permission, they must relaunch.
+		if let url = URL(
+			string:
+				"x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring"
+		) {
+			NSWorkspace.shared.open(url)
+		}
+	}
+}
+
 // MARK: - FastMiddle
 /// A class responsible for:
 /// 1) Handling a background loop that enables three-finger click -> middle click.
@@ -40,6 +56,7 @@ final class FastMiddle: ObservableObject {
 		// Allocate and initialize the fm_state pointer
 		state = UnsafeMutablePointer<fm_state>.allocate(capacity: 1)
 		state.initialize(to: new_state())
+		askPermissions()
 
 		// If default isEnabled == true, start immediately
 		if isEnabled {
@@ -142,6 +159,9 @@ struct FastMiddleApp: App {
 				}
 
 				Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
+					.onAppear {
+						launchAtLoginEnabled = isLaunchAtLoginEnabled()
+					}
 					.onChange(of: launchAtLoginEnabled) { _, newValue in
 						if newValue {
 							enableLaunchAtLogin()
@@ -197,5 +217,9 @@ struct FastMiddleApp: App {
 		} catch {
 			print("Failed to unregister app from login: \(error.localizedDescription)")
 		}
+	}
+
+	private func isLaunchAtLoginEnabled() -> Bool {
+		return SMAppService.mainApp.status == SMAppService.Status.enabled
 	}
 }

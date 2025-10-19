@@ -1,96 +1,92 @@
 import ServiceManagement
 import SwiftUI
 
+// MARK: - Permissions
+
+/// Requests accessibility permissions from the user if not already granted.
+/// This is required for the app to detect and emulate mouse clicks.
 func askPermissions() {
-	let options =
-		[kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-	if !AXIsProcessTrustedWithOptions(options) {
-		// This will pop up the system dialog pointing the user to
-		// System Settings → Privacy & Security → Input Monitoring.
-		// After they click “OK” and grant permission, they must relaunch.
-		if let url = URL(
-			string:
-				"x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring"
-		) {
-			NSWorkspace.shared.open(url)
-		}
+	let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+
+	guard !AXIsProcessTrustedWithOptions(options) else { return }
+
+	// Open System Settings to Privacy & Security → Input Monitoring
+	let privacyURLString = "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring"
+	if let url = URL(string: privacyURLString) {
+		NSWorkspace.shared.open(url)
 	}
 }
 
 // MARK: - FastMiddle
-/// A class responsible for:
-/// 1) Handling a background loop that enables three-finger click -> middle click.
-/// 2) Exposing an `isEnabled` property to SwiftUI (via @Published).
-final class FastMiddle: ObservableObject {
-	// MARK: - Low-Level C State & Background Queue
 
-	/// Pointer to the underlying state structure in C.
+/// Manages the middle-click emulation functionality.
+///
+/// This class:
+/// - Handles a background loop that enables three-finger click → middle click
+/// - Exposes an `isEnabled` property to SwiftUI via `@Published`
+/// - Manages C-level state for trackpad/mouse event handling
+final class FastMiddle: ObservableObject {
+	// MARK: - Constants
+
+	private enum Constants {
+		static let queueLabel = "com.fastmiddle.loop.queue"
+	}
+
+	// MARK: - Properties
+
+	/// Pointer to the underlying state structure in C
 	private var state: UnsafeMutablePointer<fm_state>
 
-	/// A background queue running the trackpad/mouse handling loop.
+	/// Background queue running the trackpad/mouse handling loop
 	private var runQueue: DispatchQueue?
 
-	/// Indicates whether the loop is currently active.
-	private var isRunning: Bool = false
+	/// Indicates whether the loop is currently active
+	private var isRunning = false
 
-	// MARK: - Published Property for SwiftUI
-
-	/**
-     Reflects whether the middle-click emulation is currently enabled.
-     Setting this to `true` starts the loop (if not already running),
-     and setting it to `false` stops the loop (if running).
-     */
-	@Published var isEnabled: Bool = true {
+	/// Reflects whether middle-click emulation is currently enabled.
+	///
+	/// Setting this to `true` starts the loop (if not already running).
+	/// Setting this to `false` stops the loop (if running).
+	@Published var isEnabled = true {
 		didSet {
-			if isEnabled {
-				start()
-			} else {
-				stop()
-			}
+			isEnabled ? start() : stop()
 		}
 	}
 
-	// MARK: - Initialization & Deinitialization
+	// MARK: - Lifecycle
 
 	init() {
-		// Allocate and initialize the fm_state pointer
 		state = UnsafeMutablePointer<fm_state>.allocate(capacity: 1)
 		state.initialize(to: new_state())
 		askPermissions()
 
-		// If default isEnabled == true, start immediately
 		if isEnabled {
 			start()
 		}
 	}
 
 	deinit {
-		// Ensure we stop before deallocation
 		isRunning = false
 		state_cleanup(state)
 		state.deinitialize(count: 1)
 		state.deallocate()
 	}
 
-	// MARK: - Start/Stop Methods
+	// MARK: - Public Methods
 
-	/**
-     Starts the middle-click emulation loop on a background queue if not already running.
-     */
+	/// Starts the middle-click emulation loop on a background queue if not already running.
 	func start() {
 		guard !isRunning else { return }
 		isRunning = true
 
-		runQueue = DispatchQueue(label: "fastmiddle.loop.queue", qos: .background)
+		runQueue = DispatchQueue(label: Constants.queueLabel, qos: .userInitiated)
 		runQueue?.async { [weak self] in
-			guard let self = self else { return }
+			guard let self else { return }
 			run_click_loop(self.state)
 		}
 	}
 
-	/**
-     Stops the middle-click emulation loop if it is currently running.
-     */
+	/// Stops the middle-click emulation loop if it is currently running.
 	func stop() {
 		guard isRunning else { return }
 		isRunning = false
@@ -98,128 +94,329 @@ final class FastMiddle: ObservableObject {
 	}
 }
 
-// MARK: - HoverLineHighlightButtonStyle
-/// A ButtonStyle that highlights the entire row on hover using a subtle system gray color.
-struct HoverLineHighlightButtonStyle: ButtonStyle {
-	func makeBody(configuration: Configuration) -> some View {
-		HoveringRow(configuration: configuration)
+// MARK: - ModernButtonStyle
+
+/// A modern button style with subtle hover effects and glass morphism design.
+struct ModernButtonStyle: ButtonStyle {
+	// MARK: - Constants
+
+	private enum Constants {
+		static let cornerRadius: CGFloat = 8
+		static let horizontalPadding: CGFloat = 12
+		static let verticalPadding: CGFloat = 8
+		static let backgroundOpacity: CGFloat = 0.1
+		static let strokeOpacity: CGFloat = 0.2
+		static let strokeWidth: CGFloat = 0.5
+		static let pressedScale: CGFloat = 0.98
+		static let hoverAnimationDuration: CGFloat = 0.15
+		static let pressAnimationDuration: CGFloat = 0.1
 	}
 
-	private struct HoveringRow: View {
+	// MARK: - Properties
+
+	private let accentColor: Color?
+
+	// MARK: - Initialization
+
+	init(accentColor: Color? = nil) {
+		self.accentColor = accentColor
+	}
+
+	func makeBody(configuration: Configuration) -> some View {
+		ModernButtonView(configuration: configuration, accentColor: accentColor)
+	}
+
+	// MARK: - ModernButtonView
+
+	private struct ModernButtonView: View {
 		let configuration: Configuration
+		let accentColor: Color?
 		@State private var isHovered = false
+
+		private var effectiveAccentColor: Color {
+			accentColor ?? .accentColor
+		}
 
 		var body: some View {
 			HStack {
 				configuration.label
 				Spacer()
 			}
-			.padding(.horizontal, 3)
-			.padding(.vertical, 2)
-			.background(
-				isHovered
-					? Color(nsColor: .unemphasizedSelectedTextBackgroundColor)
-					: Color.clear
-			)
-			.cornerRadius(6)
-			.foregroundColor(.primary)
-			.onHover { hover in
-				isHovered = hover
+			.padding(.horizontal, Constants.horizontalPadding)
+			.padding(.vertical, Constants.verticalPadding)
+			.background(backgroundView)
+			.foregroundColor(isHovered ? effectiveAccentColor : .primary)
+			.animation(.easeInOut(duration: Constants.hoverAnimationDuration), value: isHovered)
+			.onHover { isHovered = $0 }
+			.scaleEffect(configuration.isPressed ? Constants.pressedScale : 1.0)
+			.animation(.easeInOut(duration: Constants.pressAnimationDuration), value: configuration.isPressed)
+		}
+
+		@ViewBuilder
+		private var backgroundView: some View {
+			if isHovered {
+				RoundedRectangle(cornerRadius: Constants.cornerRadius)
+					.fill(effectiveAccentColor.opacity(Constants.backgroundOpacity))
+					.overlay(
+						RoundedRectangle(cornerRadius: Constants.cornerRadius)
+							.stroke(effectiveAccentColor.opacity(Constants.strokeOpacity), lineWidth: Constants.strokeWidth)
+					)
+			} else {
+				RoundedRectangle(cornerRadius: Constants.cornerRadius)
+					.fill(Color.clear)
 			}
 		}
 	}
 }
 
-// MARK: - FastMiddleApp
-@main
-struct FastMiddleApp: App {
-	// Now we only have a single class, so let's name it fastMiddle
-	@StateObject private var fastMiddle = FastMiddle()
-	@State private var launchAtLoginEnabled: Bool = false
+// MARK: - GlassCard
 
-	init() {
-		// Check if the app is already set to launch at login
-		launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+/// A container view that provides a liquid glass effect with translucent blur.
+struct GlassCard<Content: View>: View {
+	// MARK: - Properties
+
+	private let content: Content
+
+	// MARK: - Initialization
+
+	init(@ViewBuilder content: () -> Content) {
+		self.content = content()
 	}
 
-	var body: some Scene {
-		MenuBarExtra("FastMiddle", systemImage: "computermouse.fill") {
-			VStack(alignment: .leading) {
-				// Single-line label + toggle
-				HStack {
-					Text("FastMiddle")
-						.font(.body)
-						.bold()
+	// MARK: - Body
 
-					Spacer()
+	var body: some View {
+		content
+			.padding(16)
+			.background(
+				RoundedRectangle(cornerRadius: 16)
+					.fill(.ultraThinMaterial)
+					.shadow(
+						color: Color.black.opacity(0.1),
+						radius: 20,
+						x: 0,
+						y: 10
+					)
+			)
+	}
+}
 
-					Toggle("", isOn: $fastMiddle.isEnabled)
-						.toggleStyle(.switch)
-						.tint(.accentColor)  // Use system accent color (macOS 11+)
-				}
+// MARK: - AboutView
 
-				Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
-					.onAppear {
-						launchAtLoginEnabled = isLaunchAtLoginEnabled()
-					}
-					.onChange(of: launchAtLoginEnabled) { _, newValue in
-						if newValue {
-							enableLaunchAtLogin()
-						} else {
-							disableLaunchAtLogin()
-						}
-					}
+/// The About window content following macOS design guidelines.
+struct AboutView: View {
+	// MARK: - Constants
 
-				Divider()
+	private enum Constants {
+		static let appName = "FastMiddle"
+		static let version = "1.0"
+		static let iconSize: CGFloat = 128
+		static let windowWidth: CGFloat = 400
+		static let verticalSpacing: CGFloat = 16
+		static let titleFontSize: CGFloat = 24
+		static let versionFontSize: CGFloat = 13
+		static let descriptionFontSize: CGFloat = 13
+		static let linkFontSize: CGFloat = 13
+		static let githubURL = "https://github.com/NicoNex/fastmiddle"
+		static let copyrightYear = "2025"
+	}
 
-				// About button, providing info via an NSAlert
-				Button("About") {
-					NSApplication.shared.activate(ignoringOtherApps: true)
-					let alert = NSAlert()
-					alert.messageText = "FastMiddle"
-					alert.informativeText =
-						"""
-						This app enables 3-finger click to emulate middle-click on your trackpad or Magic Mouse.
-						Source code at: github.com/NicoNex/fastmiddle
-						"""
-					alert.alertStyle = .informational
-					alert.addButton(withTitle: "OK")
-					alert.runModal()
-				}
-				.buttonStyle(HoverLineHighlightButtonStyle())
+	// MARK: - Environment
 
-				// Quit button
-				Button("Quit") {
-					fastMiddle.stop()
-					NSApp.terminate(nil)
-				}
-				.buttonStyle(HoverLineHighlightButtonStyle())
+	@Environment(\.dismiss) private var dismiss
+
+	// MARK: - Body
+
+	var body: some View {
+		VStack(spacing: Constants.verticalSpacing) {
+			// App Icon
+			Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
+				.resizable()
+				.frame(width: Constants.iconSize, height: Constants.iconSize)
+				.padding(.top, 20)
+
+			// App Name
+			Text(Constants.appName)
+				.font(.system(size: Constants.titleFontSize, weight: .medium))
+
+			// Version
+			Text("Version \(Constants.version)")
+				.font(.system(size: Constants.versionFontSize))
+				.foregroundColor(.secondary)
+
+			Divider()
+				.padding(.horizontal, 40)
+
+			// Description
+			Text("Enable 3-finger click to emulate middle-click\non your trackpad or Magic Mouse")
+				.font(.system(size: Constants.descriptionFontSize))
+				.foregroundColor(.secondary)
+				.multilineTextAlignment(.center)
+				.fixedSize(horizontal: false, vertical: true)
+
+			// GitHub Link
+			Link("github.com/NicoNex/fastmiddle", destination: URL(string: Constants.githubURL)!)
+				.font(.system(size: Constants.linkFontSize))
+
+			// Copyright
+			Text("Copyright © \(Constants.copyrightYear) NicoNex")
+				.font(.system(size: 11))
+				.foregroundColor(.secondary)
+				.padding(.bottom, 20)
+
+			// Close Button
+			Button("OK") {
+				dismiss()
 			}
-			.padding()
+			.keyboardShortcut(.defaultAction)
+			.controlSize(.large)
+			.padding(.bottom, 16)
 		}
-		// For macOS 14+, ensures the toggle is interactive
+		.frame(width: Constants.windowWidth)
+		.background(Color(NSColor.windowBackgroundColor))
+	}
+}
+
+// MARK: - FastMiddleApp
+
+@main
+struct FastMiddleApp: App {
+	// MARK: - Constants
+
+	private enum Constants {
+		static let appName = "FastMiddle"
+		static let menuBarIcon = "computermouse.fill"
+		static let subtitle = "3-finger middle click"
+		static let minWindowWidth: CGFloat = 280
+		static let contentPadding: CGFloat = 16
+		static let verticalSpacing: CGFloat = 12
+		static let dividerPadding: CGFloat = 4
+		static let headerSpacing: CGFloat = 2
+		static let headerBottomPadding: CGFloat = 4
+		static let titleFontSize: CGFloat = 16
+		static let subtitleFontSize: CGFloat = 11
+	}
+
+	// MARK: - Properties
+
+	@StateObject private var fastMiddle = FastMiddle()
+	@State private var launchAtLoginEnabled = false
+
+	// MARK: - Initialization
+
+	init() {
+		_launchAtLoginEnabled = State(initialValue: SMAppService.mainApp.status == .enabled)
+	}
+
+	// MARK: - Body
+
+	var body: some Scene {
+		MenuBarExtra(Constants.appName, systemImage: Constants.menuBarIcon) {
+			VStack(alignment: .leading, spacing: Constants.verticalSpacing) {
+				headerView
+				Divider().padding(.vertical, Constants.dividerPadding)
+				launchAtLoginToggle
+				Divider().padding(.vertical, Constants.dividerPadding)
+				aboutButton
+				quitButton
+			}
+			.padding(Constants.contentPadding)
+			.frame(minWidth: Constants.minWindowWidth)
+		}
 		.menuBarExtraStyle(.window)
+
+		Window("About FastMiddle", id: "about") {
+			AboutView()
+		}
+		.windowStyle(.hiddenTitleBar)
+		.windowResizability(.contentSize)
+		.defaultPosition(.center)
+	}
+
+	// MARK: - Subviews
+
+	private var headerView: some View {
+		HStack {
+			VStack(alignment: .leading, spacing: Constants.headerSpacing) {
+				Text(Constants.appName)
+					.font(.system(size: Constants.titleFontSize, weight: .semibold))
+				Text(Constants.subtitle)
+					.font(.system(size: Constants.subtitleFontSize))
+					.foregroundColor(.secondary)
+			}
+
+			Spacer()
+
+			Toggle("", isOn: $fastMiddle.isEnabled)
+				.toggleStyle(.switch)
+				.controlSize(.regular)
+		}
+		.padding(.bottom, Constants.headerBottomPadding)
+	}
+
+	private var launchAtLoginToggle: some View {
+		HStack {
+			Text("Launch at Login")
+			Spacer()
+			Toggle("", isOn: $launchAtLoginEnabled)
+				.toggleStyle(.switch)
+				.controlSize(.small)
+		}
+		.onAppear {
+			launchAtLoginEnabled = isLaunchAtLoginEnabled()
+		}
+		.onChange(of: launchAtLoginEnabled) { _, newValue in
+			handleLaunchAtLoginChange(newValue)
+		}
+	}
+
+	private var aboutButton: some View {
+		AboutButtonView()
+	}
+
+	private struct AboutButtonView: View {
+		@Environment(\.openWindow) private var openWindow
+
+		var body: some View {
+			Button("About") {
+				NSApplication.shared.activate(ignoringOtherApps: true)
+				openWindow(id: "about")
+			}
+			.buttonStyle(ModernButtonStyle())
+		}
+	}
+
+	private var quitButton: some View {
+		Button("Quit") {
+			fastMiddle.stop()
+			NSApp.terminate(nil)
+		}
+		.buttonStyle(ModernButtonStyle(accentColor: .red))
+	}
+
+	// MARK: - Private Methods
+
+	private func handleLaunchAtLoginChange(_ enabled: Bool) {
+		enabled ? enableLaunchAtLogin() : disableLaunchAtLogin()
 	}
 
 	private func enableLaunchAtLogin() {
 		do {
 			try SMAppService.mainApp.register()
-			print("App registered to launch at login.")
 		} catch {
-			print("Failed to register app for login: \(error.localizedDescription)")
+			NSLog("Failed to register app for login: %@", error.localizedDescription)
 		}
 	}
 
 	private func disableLaunchAtLogin() {
 		do {
 			try SMAppService.mainApp.unregister()
-			print("App unregistered from launching at login.")
 		} catch {
-			print("Failed to unregister app from login: \(error.localizedDescription)")
+			NSLog("Failed to unregister app from login: %@", error.localizedDescription)
 		}
 	}
 
 	private func isLaunchAtLoginEnabled() -> Bool {
-		return SMAppService.mainApp.status == SMAppService.Status.enabled
+		SMAppService.mainApp.status == .enabled
 	}
 }
